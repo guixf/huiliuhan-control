@@ -250,28 +250,33 @@ static unsigned int xiaoshu;
 void compare_temper(u16 set_temper,u16 temper) 		//PID温度控制输出函数
 { 
 //  unsigned char i; 
-  
+	u8 Set_PWM;  
   if(set_temper>temper) 
    { 
     if(set_temper-temper>80)//如果控制目标温度温与实时温度差大于8度，（放大10倍）是50
      { 
-     
-	   pwm = 10; //PWM 输出高电平占空比最大。即全速加温
+        Set_PWM = 0xff;//PWM 输出高电平占空比最大。即全速加温
+
+	   //pwm = 10; 
      }
 	else 
     { 
 						if(set_temper<200){
-											pwm = 600; //t1保持温度缓慢增加
+											   Set_PWM = 0x8f;//t1保持温度缓慢增加
 						}else{
-											pwm = 800;//t2保持温度稳定
+											Set_PWM = 0x4f;//t2保持温度稳定
 						}
 	  
     } 
    } 
-  else if(set_temper<=temper) //目标温度小于实时温度pwm输出低电平最高占空比，关闭加热。
-   { 
-     pwm = 1000; 
-   } 
+			else //目标温度小于实时温度pwm输出低电平最高占空比，关闭加热。
+		{ 
+					Set_PWM = 0; 
+		} 
+		
+				PCA_PWM2=0x30&(Set_PWM>>2);//高两位XCCAPnH[1:0]
+				CCAP2H =Set_PWM;//低8位CCAPnH[7:0]
+	 
 }
 /***************************************************************************************/
 //根据温度和时间设置计算斜率上的温度数值
@@ -299,7 +304,20 @@ unsigned char CalcTempValue(int it)
 		}
 }
 /***************************************************************************************/
-
+/*PWM初始化*/
+void PWM_Init(void)
+{
+  CCON = 0x00;
+  CMOD = 0x08;//PCA时钟为系统时钟
+  CL = 0x00;  //PCA计数器初始值低8位
+  CH = 0x00;  //PCA计数器初始值高8位
+  CCAPM2 = 0x42; //PCA模块0为PWM工作模式
+  PCA_PWM2 = 0xc0;//PCA模块0输出10位PWM
+  CCAP2L = 0x00;
+  CCAP2H = 0x00;//PCA模块用在PWM 模式中时,用来控制输出的占空比。
+  CR = 1; //启动PCA计时器
+}
+/***************************************************************************************/
 void main()
 {
 	
@@ -311,6 +329,7 @@ void main()
 
 			Timer0Init();	 //	启动定时器0
 			UartInit();    //启动uart
+			PWM_Init();     //启动PWM
       ES = 1;
       WDT_CONTR = 0x27; //启动看门狗，8s重启
 
@@ -342,7 +361,7 @@ void main()
 										if (h2 > 250||h2 < 150) h2=200;
 										if (t2 > 150||t2 < 50) t2=100;
 										if (h3 > 300||h3 < 200) h3=240;
-										if (t3 > 100||t2 < 20) t2=50;
+										if (t3 > 100||t3 < 20) t3=50;
 
 									sprintf(string,"HuiLiuHan is set T1=%d,S1=%d,T2=%d,S2=%d,T3=%d,S3=%d!\r\n",h1,t1,h2,t2,h3,t3);
 								  SendString(string);										
@@ -467,8 +486,10 @@ void main()
 													    set_temper=	CalcTempValue(3)				;//获取当前时间应该到达的温度
 															while(t3 > key_time*20)  compare_temper(set_temper,TempValue);
 														}else if(key_time*20>t3){
-																		pwm=1000;
-																		P55 = 0;//关闭输出
+																		//pwm=1000;
+																		//P55 = 0;//关闭输出
+																			PCA_PWM2=0;//高两位XCCAPnH[1:0]
+																			CCAP2H =0;//低8位CCAPnH[7:0]
 																	}
 
 
@@ -487,18 +508,11 @@ void timer0() interrupt 1     //定时器T0中断函数入口,检测按键输入
 
 void Timer1(void)   interrupt 2 		//1微秒@11.0592MHz
 {
-static unsigned char k;
-
 	AUXR |= 0x80;		//定时器时钟1T模式
 	TMOD &= 0xF0;		//设置定时器模式
 	TL0 = 0xF5;		//设置定时初始值
 	TH0 = 0xFF;		//设置定时初始值
 	TF0 = 0;		//清除TF0标志
 	TR0 = 1;		//定时器0开始计时
-	
-        k++;//pwm输出部分
-        if(k > pwm) P55=1;//输出高电位
-        else P55=0;//输出低电位
-
 }
 
